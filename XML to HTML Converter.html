@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>XML to HTML/PDF Converter</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<style>
+    /* --- デザイン設定 --- */
+    :root {
+        --primary-color: #4a90e2; --primary-hover: #357abd;
+        --bg-color: #f4f7f6; --card-bg: #ffffff;
+        --text-color: #333; --border-radius: 12px;
+        --shadow: 0 4px 15px rgba(0,0,0,0.05);
+        --success: #2ecc71; --pdf-color: #555555;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: "Helvetica Neue", Arial, sans-serif; background-color: var(--bg-color); color: var(--text-color); padding: 20px; line-height: 1.6; }
+    .container { max-width: 900px; margin: 0 auto; }
+    
+    header { text-align: center; margin-bottom: 30px; }
+    h1 { font-size: 1.8rem; color: #2c3e50; margin-bottom: 5px; }
+    .subtitle { font-size: 0.9rem; color: #666; background: #e1e8ed; padding: 4px 12px; border-radius: 20px; display: inline-block; }
+
+    .card { background: var(--card-bg); border-radius: var(--border-radius); box-shadow: var(--shadow); padding: 25px; margin-bottom: 20px; transition: transform 0.2s; }
+    h2 { font-size: 1.1rem; margin-bottom: 15px; border-left: 4px solid var(--primary-color); padding-left: 10px; display: flex; align-items: center; gap: 10px; }
+
+    /* 設定エリア */
+    .xsl-status-box { background: #f8f9fa; border: 1px solid #e9ecef; padding: 15px; border-radius: 8px; font-size: 0.9rem; margin-bottom: 10px; display: flex; align-items: center; gap: 10px; }
+    .status-badge { font-weight: bold; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; background: #e3f2fd; color: #1565c0; }
+    .badge-manual { background: #fce4ec; color: #c2185b; }
+
+    .file-input-wrapper { position: relative; display: inline-block; margin-top: 5px;}
+    .btn-secondary { border: 1px solid #ccc; background: white; padding: 8px 16px; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: 0.2s; }
+    .btn-secondary:hover { background-color: #f0f0f0; }
+    .file-input-wrapper input[type=file] { position: absolute; left: 0; top: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
+
+    /* ドロップゾーン */
+    .drop-zone { border: 2px dashed #cbd5e0; border-radius: var(--border-radius); padding: 40px 20px; text-align: center; cursor: pointer; background: #fafbfc; transition: 0.3s; }
+    .drop-zone:hover, .drop-zone.dragover { border-color: var(--primary-color); background: #ebf8ff; color: var(--primary-color); }
+    .drop-zone i { font-size: 3rem; color: #a0aec0; margin-bottom: 15px; transition: color 0.3s; }
+    .drop-zone:hover i { color: var(--primary-color); }
+
+    /* 結果カード */
+    .results-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 15px; }
+    .result-card { background: white; border: 1px solid #eee; border-radius: 8px; padding: 15px; border-left: 4px solid var(--success); animation: fadeIn 0.5s ease; display: flex; flex-direction: column; justify-content: space-between; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    
+    .result-filename { font-weight: bold; font-size: 0.95rem; margin-bottom: 10px; word-break: break-all; color: #2c3e50; }
+    
+    .btn-group { display: flex; gap: 10px; margin-top: auto; }
+    .btn { flex: 1; display: flex; align-items: center; justify-content: center; padding: 10px; border-radius: 6px; font-size: 0.85rem; font-weight: bold; text-decoration: none; cursor: pointer; gap: 5px; color: white; border: none; transition: 0.2s; }
+    .btn-html { background-color: var(--primary-color); }
+    .btn-html:hover { background-color: var(--primary-hover); }
+    .btn-print { background-color: var(--pdf-color); }
+    .btn-print:hover { background-color: #333; }
+
+    /* ログエリア */
+    .log-container { background: #2d3436; color: #dfe6e9; padding: 15px; border-radius: 8px; font-family: Consolas, monospace; font-size: 0.8rem; height: 150px; overflow-y: auto; }
+    .log-entry { margin-bottom: 4px; border-bottom: 1px solid #444; padding-bottom: 2px; }
+    .log-err { color: #ff7675; } .log-warn { color: #ffeaa7; } .log-ok { color: #55efc4; }
+
+    /* 印刷用iframe (非表示) */
+    #print-frame { position: fixed; right: 0; bottom: 0; width: 0; height: 0; border: none; visibility: hidden; }
+
+    @media (max-width: 600px) {
+        body { padding: 10px; }
+        .card { padding: 15px; }
+        .results-grid { grid-template-columns: 1fr; }
+    }
+</style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>XML to HTML/PDF Converter</h1>
+        <span class="subtitle"><i class="fas fa-shield-alt"></i> 完全ブラウザ完結型（高画質PDF対応）</span>
+    </header>
+
+    <div class="card">
+        <h2><i class="fas fa-cog"></i> 設定 (XSL指定)</h2>
+        <div class="xsl-status-box">
+            <i class="fas fa-info-circle"></i>
+            <div>
+                <span id="xsl-mode-badge" class="status-badge badge-auto">自動取得モード</span>
+                <span id="xsl-filename">XML内の指定を使用</span>
+            </div>
+        </div>
+        
+        <div class="file-input-wrapper">
+            <button class="btn-secondary"><i class="fas fa-folder-open"></i> 任意のXSLファイルを手動指定</button>
+            <input type="file" id="xsl-input" accept=".xsl">
+        </div>
+        <p style="font-size: 0.8rem; color: #888; margin-top: 8px;">
+            ※ 自動取得がエラーになる場合、ここに「xxxxxxx.xsl」などを読み込ませてください。
+        </p>
+    </div>
+
+    <div class="card">
+        <h2><i class="fas fa-magic"></i> 変換実行</h2>
+        <div class="drop-zone" id="drop-zone">
+            <i class="fas fa-file-invoice-dollar"></i>
+            <div style="font-weight:bold; font-size:1.1rem; margin-bottom:5px;">XMLファイルをここにドロップ</div>
+            <div style="font-size:0.85rem; color:#888;">またはクリックして選択</div>
+            <input type="file" id="xml-input" accept=".xml" style="display:none;">
+        </div>
+    </div>
+
+    <div id="results-container" style="display:none;">
+        <div class="card" style="background:transparent; box-shadow:none; padding:0;">
+            <h2><i class="fas fa-check-circle"></i> 完了ファイル</h2>
+            <div class="results-grid" id="results-grid"></div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2 style="font-size:1rem; border:none; margin-bottom:5px; color:#666;"><i class="fas fa-terminal"></i> 処理ログ</h2>
+        <div class="log-container" id="log-area"><div class="log-entry">アプリを起動しました...</div></div>
+    </div>
+</div>
+
+<iframe id="print-frame"></iframe>
+
+<script>
+    const dropZone = document.getElementById('drop-zone');
+    const xmlInput = document.getElementById('xml-input');
+    const xslInput = document.getElementById('xsl-input');
+    const logArea = document.getElementById('log-area');
+    const resultsContainer = document.getElementById('results-container');
+    const resultsGrid = document.getElementById('results-grid');
+    const xslModeBadge = document.getElementById('xsl-mode-badge');
+    const xslFilename = document.getElementById('xsl-filename');
+    const printFrame = document.getElementById('print-frame');
+
+    let manualXslContent = null;
+    let manualXslName = null;
+
+    // --- ログ機能 ---
+    function log(msg, type='normal') {
+        const div = document.createElement('div');
+        div.className = 'log-entry';
+        const time = new Date().toLocaleTimeString('ja-JP',{hour12:false});
+        div.textContent = `[${time}] ${msg}`;
+        if(type==='error') div.classList.add('log-err');
+        if(type==='warn') div.classList.add('log-warn');
+        if(type==='success') div.classList.add('log-ok');
+        logArea.appendChild(div);
+        logArea.scrollTop = logArea.scrollHeight;
+    }
+
+    // --- XSL手動設定 ---
+    xslInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if(!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            manualXslContent = ev.target.result;
+            manualXslName = file.name;
+            xslModeBadge.textContent = "手動指定モード";
+            xslModeBadge.className = "status-badge badge-manual";
+            xslFilename.textContent = file.name;
+            log(`設定変更: 手動XSLを適用 (${file.name})`, 'warn');
+        };
+        reader.readAsText(file);
+    });
+
+    // --- ドラッグ＆ドロップ ---
+    dropZone.addEventListener('click', () => xmlInput.click());
+    
+    xmlInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+            handleFile(e.target.files[0]); 
+        }
+        e.target.value = ''; 
+    });
+
+    dropZone.addEventListener('dragover', (e) => { 
+        e.preventDefault(); 
+        dropZone.classList.add('dragover'); 
+    });
+    
+    dropZone.addEventListener('dragleave', () => {
+        dropZone.classList.remove('dragover'); 
+    });
+    
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault(); 
+        dropZone.classList.remove('dragover');
+        if (e.dataTransfer.files.length > 0) {
+            handleFile(e.dataTransfer.files[0]);
+        }
+    });
+
+    function handleFile(file) {
+        if(file.name.toLowerCase().endsWith('.xml')) {
+            processXml(file);
+        } else {
+            log(`エラー: XMLファイルのみ対応しています (${file.name})`, 'error');
+        }
+    }
+
+    // --- XML処理メイン ---
+    function processXml(file) {
+        resultsGrid.innerHTML = ''; 
+        resultsContainer.style.display = 'none';
+
+        log(`処理開始: ${file.name}...`);
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            const xmlText = e.target.result;
+            const parser = new DOMParser();
+            const xmlDoc = parser.parseFromString(xmlText, "text/xml");
+
+            if(xmlDoc.getElementsByTagName("parsererror").length > 0) {
+                log(`エラー: XMLの読み込みに失敗しました (${file.name})`, 'error');
+                return;
+            }
+
+            let xslText = null;
+
+            if (manualXslContent) {
+                xslText = manualXslContent;
+            } else {
+                const pis = xmlDoc.childNodes;
+                let href = null;
+                for(let i=0; i<pis.length; i++) {
+                    if(pis[i].nodeType===7 && pis[i].target==='xml-stylesheet') {
+                        const match = pis[i].data.match(/href=["']([^"']+)["']/);
+                        if(match) href = match[1];
+                    }
+                }
+                
+                if(href) {
+                    log(`XSL検出: ${href}`);
+                    try {
+                        const res = await fetch(href);
+                        if(!res.ok) throw new Error(res.status);
+                        xslText = await res.text();
+                    } catch(err) {
+                        log(`自動取得エラー: ブラウザのセキュリティにより外部XSLを取得できませんでした。`, 'error');
+                        log(`➡ 解決策: 手元の「xxxxxxx.xsl」などを上のボタンから読み込ませてください。`, 'warn');
+                        return;
+                    }
+                } else {
+                    log(`エラー: XML内にスタイルシートの指定が見つかりません。手動で指定してください。`, 'error');
+                    return;
+                }
+            }
+
+            if(xslText) performTransformation(xmlDoc, xslText, file.name);
+        };
+        reader.readAsText(file);
+    }
+
+    function performTransformation(xmlDoc, xslText, originalFilename) {
+        try {
+            const parser = new DOMParser();
+            const xslDoc = parser.parseFromString(xslText, "text/xml");
+            const xsltProcessor = new XSLTProcessor();
+            xsltProcessor.importStylesheet(xslDoc);
+            
+            const resultDoc = xsltProcessor.transformToFragment(xmlDoc, document);
+            const serializer = new XMLSerializer();
+            // 完全なHTML構造が必要なので doctypeなどを確認
+            let htmlString = serializer.serializeToString(resultDoc);
+
+            // もし<html>タグがない場合（fragmentの場合）、補完する
+            if (!htmlString.includes('<html')) {
+                htmlString = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>${htmlString}</body></html>`;
+            }
+
+            const baseName = originalFilename.replace(/\.xml$/i, '');
+            addResultCard(baseName, htmlString);
+            log(`完了: ${baseName}`, 'success');
+
+        } catch(e) {
+            log(`変換エラー: ${e.message}`, 'error');
+        }
+    }
+
+    // --- 結果カード追加 (HTML & 印刷/PDFボタン) ---
+    function addResultCard(baseName, htmlContent) {
+        resultsContainer.style.display = 'block';
+
+        const htmlBlob = new Blob([htmlContent], {type: 'text/html'});
+        const htmlUrl = URL.createObjectURL(htmlBlob);
+
+        const card = document.createElement('div');
+        card.className = 'result-card';
+        card.innerHTML = `
+            <div class="result-filename">${baseName}</div>
+            <div class="btn-group">
+                <a href="${htmlUrl}" download="${baseName}_証明書.html" class="btn btn-html">
+                    <i class="fas fa-code"></i> HTML保存
+                </a>
+                <button onclick="printPDF(this, '${baseName}')" class="btn btn-print">
+                    <i class="fas fa-print"></i> PDF保存/印刷
+                </button>
+            </div>
+            <div class="hidden-html" style="display:none;">${encodeURIComponent(htmlContent)}</div>
+        `;
+        resultsGrid.appendChild(card);
+    }
+
+    // --- 印刷/PDF機能 (iframe使用) ---
+    function printPDF(btn, filename) {
+        const rawHtmlEncoded = btn.parentElement.nextElementSibling.innerText;
+        const rawHtml = decodeURIComponent(rawHtmlEncoded);
+
+        // 印刷用iframeに書き込む
+        const iframe = document.getElementById('print-frame');
+        const doc = iframe.contentWindow.document;
+
+        doc.open();
+        doc.write(rawHtml);
+        doc.close();
+
+        // ロードを待ってから印刷ダイアログを出す
+        iframe.contentWindow.focus();
+        setTimeout(() => {
+            iframe.contentWindow.print();
+            log(`印刷ダイアログを開きました`, 'success');
+        }, 500);
+    }
+</script>
+
+</body>
+</html>
